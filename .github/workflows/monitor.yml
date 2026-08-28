@@ -25,29 +25,25 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: azure/login@v2
-        with:
-          client-id: ${{ secrets.AZURE_CLIENT_ID }}
-          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
-          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-      - run: pip install numpy azure-identity azure-monitor-query requests
+      - run: pip install numpy requests
 
-      - name: Build baseline
-        run: python drift/baseline_builder.py --output baseline.json
+      - name: Build baseline (seed — see README for upgrading to --from-live)
+        run: python drift/baseline_builder.py --from-seed --output baseline.json
 
-      # NOTE: this step is a placeholder for pulling actual live feature
-      # data logged per-request from Project 1's database — not yet
-      # wired up (see docs/architecture.md for the honest gap). Without
-      # it, this job can validate the pipeline mechanics but has no real
-      # "current" data to compare against yet.
-      - name: Check for drift (placeholder — see architecture.md gap)
+      - name: Check for real drift against Project 1's live API
         id: drift_check
+        env:
+          LOG_ANOMALY_API_URL: ${{ vars.LOG_ANOMALY_API_URL }}
+          DEMO_PASSWORD: ${{ secrets.LOG_ANOMALY_DEMO_PASSWORD }}
         run: |
-          echo "psi_score=0.0" >> "$GITHUB_OUTPUT"
-          echo "Drift check requires wiring up live feature logging from Project 1 — see docs/architecture.md"
+          python drift/run_drift_check.py \
+            --api-url "$LOG_ANOMALY_API_URL" \
+            --username analyst \
+            --password "$DEMO_PASSWORD" \
+            --baseline baseline.json
 
       - name: Trigger retraining if drift threshold exceeded
         if: steps.drift_check.outputs.psi_score > 0.25

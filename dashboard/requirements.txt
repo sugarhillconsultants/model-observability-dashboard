@@ -4,3 +4,4 @@ azure-identity>=1.17.0
 pandas>=2.2.0
 plotly>=5.24.0
 numpy>=1.26.0
+requests>=2.32.0

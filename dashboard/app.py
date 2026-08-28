@@ -24,6 +24,7 @@ from datetime import datetime, timedelta
 import streamlit as st
 import pandas as pd
 import plotly.express as px
+import requests
 from azure.identity import DefaultAzureCredential
 from azure.monitor.query import LogsQueryClient, LogsQueryStatus
 
@@ -34,6 +35,8 @@ st.set_page_config(page_title="Log Anomaly Model — Observability", layout="wid
 
 WORKSPACE_ID = os.environ.get("LOG_ANALYTICS_WORKSPACE_ID", "")
 BASELINE_PATH = os.environ.get("BASELINE_PATH", "../drift/baseline.json")
+LOG_ANOMALY_API_URL = os.environ.get("LOG_ANOMALY_API_URL", "")
+LOG_ANOMALY_API_TOKEN = os.environ.get("LOG_ANOMALY_API_TOKEN", "")
 DRIFT_THRESHOLD = 0.25
 
 
@@ -72,6 +75,30 @@ def query_recent_requests(workspace_id: str, hours: int = 24) -> pd.DataFrame:
         st.warning(f"Could not query live telemetry ({type(e).__name__}). "
                    f"Showing baseline-only view.")
         return pd.DataFrame()
+
+
+@st.cache_data(ttl=300)
+def query_current_features(api_url: str, token: str) -> dict | None:
+    """Pulls real, current feature data from Project 1's
+    /events/recent-features endpoint. Returns None (handled gracefully
+    by the UI) if no API URL/token is configured or the request fails —
+    this dashboard should say plainly that live comparison data isn't
+    available, not silently fall back to fabricated numbers."""
+    if not api_url or not token:
+        return None
+    try:
+        response = requests.get(
+            f"{api_url}/events/recent-features",
+            headers={"Authorization": f"Bearer {token}"},
+            timeout=15,
+        )
+        response.raise_for_status()
+        data = response.json()
+        if data["n"] < 20:
+            return None  # too few real events yet to be a meaningful comparison
+        return {"confidence": data["confidence"], "text_length": data["text_length"]}
+    except Exception:
+        return None
 
 
 def render_drift_section(baseline: dict, current_features: dict | None):
@@ -133,14 +160,11 @@ def main():
 
     baseline = load_baseline()
     df = query_recent_requests(WORKSPACE_ID)
+    current_features = query_current_features(LOG_ANOMALY_API_URL, LOG_ANOMALY_API_TOKEN)
 
     render_traffic_section(df)
     st.divider()
-    # NOTE: current_features would come from actually logging input
-    # features per request in Project 1's database — not yet wired up,
-    # stated honestly in the README rather than faked with synthetic
-    # "current" data that would misrepresent this as fully working.
-    render_drift_section(baseline, current_features=None)
+    render_drift_section(baseline, current_features)
 
 
 if __name__ == "__main__":
