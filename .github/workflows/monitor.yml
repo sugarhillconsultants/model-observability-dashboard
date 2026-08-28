@@ -1,0 +1,61 @@
+name: Scheduled Drift Monitoring
+
+on:
+  schedule:
+    - cron: '0 */6 * * *'  # every 6 hours
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install numpy pytest
+      - run: pytest tests/ -v
+
+  check-drift:
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install numpy azure-identity azure-monitor-query requests
+
+      - name: Build baseline
+        run: python drift/baseline_builder.py --output baseline.json
+
+      # NOTE: this step is a placeholder for pulling actual live feature
+      # data logged per-request from Project 1's database — not yet
+      # wired up (see docs/architecture.md for the honest gap). Without
+      # it, this job can validate the pipeline mechanics but has no real
+      # "current" data to compare against yet.
+      - name: Check for drift (placeholder — see architecture.md gap)
+        id: drift_check
+        run: |
+          echo "psi_score=0.0" >> "$GITHUB_OUTPUT"
+          echo "Drift check requires wiring up live feature logging from Project 1 — see docs/architecture.md"
+
+      - name: Trigger retraining if drift threshold exceeded
+        if: steps.drift_check.outputs.psi_score > 0.25
+        env:
+          GITHUB_TOKEN: ${{ secrets.RETRAIN_TRIGGER_TOKEN }}
+        run: |
+          python retrain_trigger/trigger_retrain.py \
+            --psi-score ${{ steps.drift_check.outputs.psi_score }} \
+            --threshold 0.25 \
+            --github-token $GITHUB_TOKEN \
+            --target-repo sugarhillconsultants/reproducible-finetuning-pipeline
