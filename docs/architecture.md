@@ -70,23 +70,40 @@ stored `text` field). Concretely:
    every time it runs), but it means any PSI computed against it right
    now would be statistically noisy. Closing this requires Project 1 to
    accumulate a real burn-in period of production traffic, then running
-   `baseline_builder.py --from-live` against it.
-2. **The full pipeline has not been run end to end against a live
-   Project 1 deployment.** Every component has been verified in
-   isolation (the math, the extraction logic, the gating), but the
-   actual HTTP round-trip — `run_drift_check.py` authenticating to a
-   real running Project 1, fetching real data, and `monitor.yml`
-   correctly consuming its output to decide whether to trigger
-   retraining — has not yet been exercised for real. Given this
-   portfolio's own track record, it would be dishonest to assume that
-   will work perfectly the first time it's actually tried.
-3. **Project 2 has no listener for the retrain trigger.** Even a
+   `baseline_builder.py --from-live` against it — which can now
+   genuinely be attempted, since the endpoint it depends on is confirmed
+   working (see next section).
+2. **`GET /events/recent-features` is now confirmed genuinely working
+   end to end** — but getting there took a real fix on Project 1's
+   side: the endpoint initially failed with a classic FastAPI
+   route-ordering bug (`/events/{event_id}`, a path-parameter route,
+   was defined before the literal `/events/recent-features` path, so
+   it silently swallowed every request to the new endpoint first).
+   Fixed by reordering the routes; verified by creating real events
+   and confirming they round-tripped correctly through this exact
+   endpoint. Full account in Project 1's own `docs/incidents.md` (#10).
+3. **Project 1's event history resets on every redeploy.** This
+   surfaced directly while verifying point 2: immediately after the
+   route fix deployed, the endpoint correctly returned `n: 0` — not a
+   bug, but confirmation that Project 1's local SQLite database (no
+   persistent volume) starts empty on every new container revision.
+   This is a genuine, now-documented architectural limitation on
+   Project 1's side, not something fixable from this repo. It caps how
+   much real history is ever available for a `--from-live` baseline
+   until Project 1 moves to a persistent database.
+4. **`monitor.yml`'s full scheduled execution has still not been run
+   end to end.** The underlying script (`run_drift_check.py`) is
+   confirmed working when invoked directly against Project 1's live
+   endpoint, but the GitHub Actions workflow itself — its own secrets,
+   its own network path, running on a cron schedule rather than called
+   by hand — has not yet been exercised for real.
+5. **Project 2 has no listener for the retrain trigger.** Even a
    correctly-computed, correctly-fired `repository_dispatch` event
    currently has nothing configured on the receiving end to act on it.
 
 This is a substantially narrower, more precise gap than the original
 version of this document described — that version's gap was actually
 unclosable as stated, since it was built on a wrong assumption about
-what data existed. This version's gap is genuinely just "needs real
-traffic and a real end-to-end run," which is a normal, expected next
-step rather than a design flaw.
+what data existed. The current gap is genuinely just "needs more real
+traffic and one more real workflow run," which is a normal, expected
+next step rather than a design flaw.

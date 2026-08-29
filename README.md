@@ -65,19 +65,29 @@ for real.
   PSI against real data, when real data exists.
 - The dashboard and scheduled workflow both call the real path, not a
   `None`/hardcoded placeholder.
+- **`GET /events/recent-features` is now confirmed genuinely working**
+  — it initially failed with a classic FastAPI route-ordering bug
+  (a literal path defined after `/events/{event_id}` got silently
+  shadowed by it), fixed on Project 1's side and verified by creating
+  real events and confirming they came back correctly through this
+  exact endpoint. See Project 1's `docs/incidents.md` #10.
 
 **What's still genuinely open, stated precisely rather than vaguely:**
 - The `--from-seed` baseline currently has **only 2 samples** — enough
   to prove the pipeline mechanics work end to end, but explicitly too
-  small to be a statistically meaningful reference. A real baseline
-  needs `--from-live` run against Project 1 once it has accumulated
-  a real burn-in period of production traffic (the code already
-  supports this; it just needs real traffic to run against).
-- Neither `run_drift_check.py`'s live HTTP calls nor
-  `monitor.yml`'s full execution against a real Project 1 deployment
-  have actually been run yet — this is architecturally correct,
-  verified-in-isolation code, not confirmed working end to end the way
-  Projects 1–3's core functionality is.
+  small to be a statistically meaningful reference. `--from-live` can
+  now genuinely be run against Project 1's confirmed-working endpoint;
+  the remaining constraint is that Project 1 currently has very little
+  accumulated history to draw from (see next point).
+- **Project 1's event history resets on every redeploy** — a real,
+  documented architectural limitation on Project 1's side (local
+  SQLite with no persistent volume, not a bug in this repo). This caps
+  how much history is available to build a meaningful `--from-live`
+  baseline from until Project 1 moves to a persistent database.
+- `monitor.yml`'s full scheduled execution — its own secrets, its own
+  network path, running on a cron rather than called directly — has
+  still not been exercised end to end, even though the underlying
+  script it calls is now confirmed working when invoked directly.
 - Project 2 has no `repository_dispatch` listener yet, so even a
   correctly-fired retrain trigger currently has nothing on the
   receiving end.
